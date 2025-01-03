@@ -1,10 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"image/color"
 	"log"
+	"os"
 	"slices"
+	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
@@ -22,6 +25,7 @@ const (
 	GS_CHECK_CARDS
 	GS_PLAY
 	GS_FASTER
+	GS_CHECK_WIN
 )
 
 type Game struct {
@@ -44,11 +48,13 @@ func NewGame(cfg *GameConfig) *Game {
 	deck := NewDeck()
 	deck.Shuffle()
 	d1, d2 := deck.Split(len(deck.Cards) / 2)
-	return &Game{
+	game := &Game{
 		Config:  cfg,
 		Player1: NewPlayer(&d1, 1, cfg.Layout.P1Layout, cfg.ControlPlayer1),
 		Player2: NewPlayer(&d2, 2, cfg.Layout.P2Layout, cfg.ControlPlayer2),
 	}
+	ExchangeOpenDecks(&game.Player1, &game.Player2)
+	return game
 }
 
 func (g *Game) Update() error {
@@ -59,6 +65,9 @@ func (g *Game) Update() error {
 	if slices.Contains(g.Keys, ebiten.KeyControl) &&
 		slices.Contains(g.Keys, ebiten.KeyW) {
 		return ebiten.Termination
+	}
+	if slices.Contains(g.JustPressedKeys, ebiten.Key0) {
+		g.save()
 	}
 
 	switch g.State {
@@ -102,9 +111,11 @@ func (g *Game) Update() error {
 		n1 := g.Player1.NumberCardsInHand()
 		n2 := g.Player2.NumberCardsInHand()
 		if n1 == 0 || n2 == 0 {
+			g.Player1.ResetSelected()
+			g.Player2.ResetSelected()
 			g.State = GS_FASTER
 		} else {
-			if g.Player1.HaveMove(g.Player2.Open) || g.Player2.HaveMove(g.Player1.Open) {
+			if g.Player1.HaveMove() || g.Player2.HaveMove() {
 				g.State = GS_PLAY
 			} else {
 				g.State = GS_OPEN
@@ -122,38 +133,39 @@ func (g *Game) Update() error {
 		}
 
 		if slices.Contains(g.JustPressedKeys, g.Player1.Controlling.Open1) {
-			g.Player1.SelectOpen(g.Player1.Open)
+			g.Player1.SelectOpen(1)
 		}
 		if slices.Contains(g.JustPressedKeys, g.Player1.Controlling.Open2) {
-			g.Player1.SelectOpen(g.Player2.Open)
+			g.Player1.SelectOpen(2)
 		}
 
 		if slices.Contains(g.JustPressedKeys, g.Player2.Controlling.Open1) {
-			g.Player2.SelectOpen(g.Player1.Open)
+			g.Player2.SelectOpen(1)
 		}
 		if slices.Contains(g.JustPressedKeys, g.Player2.Controlling.Open2) {
-			g.Player2.SelectOpen(g.Player2.Open)
+			g.Player2.SelectOpen(2)
 		}
 
-		if g.Player1.CanMove() {
-			g.Player1.MakeMove()
-			g.State = GS_CHECK_CARDS
-		}
-		if g.Player2.CanMove() {
-			g.Player2.MakeMove()
+		somethingChanged := g.Player1.MakeMove()
+		somethingChanged = g.Player2.MakeMove() || somethingChanged
+		if somethingChanged {
 			g.State = GS_CHECK_CARDS
 		}
 
 	case GS_FASTER:
 		if slices.Contains(g.JustPressedKeys, g.Player1.Controlling.Open1) ||
 			slices.Contains(g.JustPressedKeys, g.Player2.Controlling.Open2) {
-			g.Player1.GatherOpen(g.Player1.Open)
-			g.Player2.GatherOpen(g.Player2.Open)
-		} else {
-			g.Player1.GatherOpen(g.Player2.Open)
-			g.Player2.GatherOpen(g.Player1.Open)
+			g.Player1.GatherOpen(1)
+			g.Player2.GatherOpen(2)
+			g.State = GS_CHECK_WIN
+		} else if slices.Contains(g.JustPressedKeys, g.Player1.Controlling.Open2) ||
+					slices.Contains(g.JustPressedKeys, g.Player2.Controlling.Open1) {
+			g.Player1.GatherOpen(2)
+			g.Player2.GatherOpen(1)
+			g.State = GS_CHECK_WIN
 		}
 
+	case GS_CHECK_WIN:
 		if g.Player1.NumberCards() == 0 || g.Player2.NumberCards() == 0 {
 			winner := g.Player1
 			if g.Player2.NumberCards() == 0 {
@@ -163,6 +175,9 @@ func (g *Game) Update() error {
 			return ebiten.Termination
 		}
 		g.State = GS_NEW_ROUND
+		g.Animations = append(g.Animations,
+			NewAnimNewRound(60*1, func() { g.State = GS_LAYOUT }),
+		)
 
 	default:
 		return fmt.Errorf("unknown GameState in Game.Update() %d", g.State)
@@ -202,10 +217,22 @@ func (g *Game) Layout(outsideWidth, outsideHeigth int) (screenWidth, screenHeigh
 	return
 }
 
-// TODO заменить константные продолжительности анимаций на зависимость от фпс
+
+func (g *Game) save() {
+	marshaled, err := json.MarshalIndent(
+		g, "", "    ",
+	)
+	if err != nil {
+		panic(err)
+	}
+	now := time.Now()
+	fname := fmt.Sprintf("%v.json", now)
+	err = os.WriteFile("save/" + fname, marshaled, 0666)
+	if err != nil {
+		panic(err)
+	}
+}
+
+// TODO заменить константные продолжительности анимаций на зависимость от фпс (мб это неправильно, потому что нужнт зависеть от рпс)
 // TODO switch g.State заменить на что-то похожее на классы вершин в графе
-// TODO перекладывание между колодами в руке
-// TODO открытие верхней карты в руке по нажатию
-// TODO одновременное открытие
-// TODO объединение одинаковых карт в руке
 // TODO валидация ошибочных нажатий

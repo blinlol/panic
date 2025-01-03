@@ -12,7 +12,7 @@ import (
 
 
 type Deck struct {
-	Cards []*Card     // TODO мб сделать  закрытым атрибутом?
+	Cards []*Card
 	Center *Coords
 	OpenNumber int
 }

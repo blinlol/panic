@@ -4,24 +4,24 @@ import (
 	"log"
 
 	"github.com/hajimehoshi/ebiten/v2"
+
+	"github.com/blinlol/panic/internal/queue"
 )
 
 
 const HAND_SIZE = 5
-const noneHand = -1
-var noneOpen *Deck = nil
+// const noneHand = -1
+const noneOpen = 0
 
 type Player struct {
 	Id int
 	Close *Deck
-	Open *Deck
+	// Open *Deck
 	Hand [HAND_SIZE]*Deck
-	
-	// TODO MyOpen and OtherOpen
+	Open [3]*Deck
 
-
-	SelectedHand int
-	SelectedOpen *Deck
+	SelectedHands *queue.Queue[int]
+	SelectedOpen int
 
 	Controlling ControlKeys
 }
@@ -39,6 +39,8 @@ func NewPlayer(d *Deck, id int, layout PlayerLayout, controlling ControlKeys) Pl
 	log.Println(layout)
 	d.Center = &layout.Close
 	o := &Deck{OpenNumber: 0, Center: &layout.Open}
+	open := [3]*Deck{}
+	open[id] = o
 	var h [HAND_SIZE]*Deck
 	for i := range HAND_SIZE{
 		h[i] = &Deck{
@@ -49,25 +51,44 @@ func NewPlayer(d *Deck, id int, layout PlayerLayout, controlling ControlKeys) Pl
 	return Player{
 		Id: id,
 		Close: d,
-		Open: o,
 		Hand: h,
-		SelectedHand: noneHand,
+		Open: open,
+		SelectedHands: queue.NewQueue[int](2),
 		SelectedOpen: noneOpen,
 		Controlling: controlling,
 	}
 }
 
 
+// must be called after Players creation
+func ExchangeOpenDecks(p1, p2 *Player) {
+	if p1.Id != 1 || p2.Id != 2 {
+		panic("players must be in right order")
+	}
+
+	p1.Open[p2.Id] = p2.Open[p2.Id]
+	p2.Open[p1.Id] = p1.Open[p1.Id]
+}
+
+
 func (p *Player) Draw(screen *ebiten.Image) {
 	p.Close.Draw(screen, NOT_SELECTED)
+	
 	sel := NOT_SELECTED
-	if p.SelectedOpen == p.Open {
+	if p.SelectedOpen == 1 {
 		sel = Selected(p.Id)
 	}
-	p.Open.Draw(screen, sel)
+	p.Open[1].Draw(screen, sel)
+
+	sel = NOT_SELECTED
+	if p.SelectedOpen == 2 {
+		sel = Selected(p.Id)
+	}
+	p.Open[2].Draw(screen, sel)
+
 	for i, deck := range p.Hand {
 		sel = NOT_SELECTED
-		if i == p.SelectedHand {
+		if p.SelectedHands.Contain(i) {
 			sel = Selected(p.Id)
 		}
 		deck.Draw(screen, sel)
@@ -102,7 +123,7 @@ func (p *Player) LayOutCards() {
 func (p *Player) OpenClosed() {
 	card := p.Close.GetTop()
 	p.Close.DeleteTop()
-	p.Open.AddCard(card, true)
+	p.Open[p.Id].AddCard(card, true)
 }
 
 
@@ -116,37 +137,48 @@ func (p *Player) NumberCardsInHand() int {
 
 
 func (p *Player) NumberCards() int {
-	return p.NumberCardsInHand() + len(p.Close.Cards) + len(p.Open.Cards)
+	return p.NumberCardsInHand() + len(p.Close.Cards) + len(p.Open[p.Id].Cards)
 }
 
-func (p *Player) HaveMove(other *Deck) bool {
-	o1 := p.Open.GetTop()
-	o2 := other.GetTop()
+
+func (p *Player) HaveMove() bool {
+	o1 := p.Open[1].GetTop()
+	o2 := p.Open[2].GetTop()
 	for  _, h := range p.Hand {
 		if len(h.Cards) == 0 {
 			continue
 		}
 
 		if h.OpenNumber == 0 {
+			log.Printf("have move p%d OpenNumber == 0\n", p.Id)
 			return true
 		}
 
 		c := h.GetTop()
 		if ValDelta(*c, *o1) == 1 {
+			log.Printf("have move p%d valdelta 1 %v %v = 1\n", p.Id, c, o1)
 			return true
 		} else if ValDelta(*c, *o2) == 1 {
+			log.Printf("have move p%d valdelta 2 %v %v = 1\n", p.Id, c, o2)
 			return true
 		}
 	}
 
 	for i := range HAND_SIZE {
-		for j := i + 1 ; j < HAND_SIZE ; j++ {
+		for j := range HAND_SIZE {
+			if i == j {
+				continue
+			}
+
 			li := len(p.Hand[i].Cards)
 			lj := len(p.Hand[j].Cards)
-			if ! ((li == 0) == (lj == 0)) {
+
+			if li == 0 && lj != 0 && p.Hand[j].OpenNumber != len(p.Hand[j].Cards) {
+				log.Printf("have move p%d can open %d %d\n", p.Id, i, j)
 				return true
 			}
-			if p.Hand[i].GetTop().Val == p.Hand[j].GetTop().Val {
+			if li > 0 && lj > 0 && p.Hand[i].GetTop().Val == p.Hand[j].GetTop().Val {
+				log.Printf("have move p%d eq vals %d %d\n", p.Id, i, j)
 				return true
 			}
 		}
@@ -156,30 +188,18 @@ func (p *Player) HaveMove(other *Deck) bool {
 
 func (p *Player) SelectHand(i int) {
 	log.Printf("p%d select hand %d", p.Id, i)
-	if p.SelectedHand == i {
-		// remove selection
-		p.SelectedHand = noneHand
-
-	} else if p.Hand[i].OpenNumber == 0 && len(p.Hand[i].Cards) > 0 {
-		// open closed hand
-		p.Hand[i].OpenNumber = 1
-
-	} else if p.SelectedHand != noneHand {
-		// already selected some deck
-		if len(p.Hand[i].Cards) == 0 && len(p.Hand[p.SelectedHand].Cards) != 0 || 
-				len(p.Hand[p.SelectedHand].Cards) != 0 && p.Hand[i].GetTop().Val == p.Hand[p.SelectedHand].GetTop().Val {
-			// equal top card vals or empty deck
-			card := p.Hand[p.SelectedHand].PopTop()
-			p.Hand[i].AddCard(card, true)
-			p.SelectedHand = noneHand
-		}
-
-	} else {
-		p.SelectedHand = i
+	if p.SelectedHands.Contain(i) {
+		p.SelectedHands.Remove(i)
+	} else if p.SelectedHands.Size() == 0 || p.SelectedOpen == noneOpen {
+		p.SelectedHands.Push(i)
+	} else if p.SelectedHands.Size() == 1 && p.SelectedOpen != noneOpen {
+		p.SelectedHands.Pop()
+		p.SelectedHands.Push(i)
 	}
 }
 
-func (p *Player) SelectOpen(open *Deck) {
+
+func (p *Player) SelectOpen(open int) {
 	log.Printf("p%d select open %v", p.Id, open)
 	if p.SelectedOpen == open {
 		p.SelectedOpen = noneOpen
@@ -188,36 +208,65 @@ func (p *Player) SelectOpen(open *Deck) {
 	}
 }
 
+
 func (p *Player) ResetSelected() {
-	p.SelectedHand = noneHand
+	p.SelectedHands.Clear()
 	p.SelectedOpen = noneOpen
 }
 
-func (p *Player) CanMove() bool {
-	if p.SelectedHand != noneHand && p.SelectedOpen != noneOpen {
-		if len(p.Hand[p.SelectedHand].Cards) == 0 {
-			p.ResetSelected()
-			return false
+
+func (p *Player) MakeMove() bool {
+	// return true if made move
+
+	if p.SelectedHands.Size() == 1 {
+		h := p.Hand[p.SelectedHands.Top()]
+
+		if h.OpenNumber == 0 && len(h.Cards) > 0 {
+			h.OpenNumber += 1
+			p.SelectedHands.Pop()
+			return true
+
+		} else if p.SelectedOpen != noneOpen {
+			o := p.Open[p.SelectedOpen]
+			if h.OpenNumber > 0 {
+				if ValDelta(*o.GetTop(), *h.GetTop()) == 1 {
+					card := h.PopTop()
+					o.AddCard(card, true)
+					p.ResetSelected()
+					return true
+				}
+			}
 		}
-		
-		oc := p.SelectedOpen.GetTop()
-		hc := p.Hand[p.SelectedHand].GetTop()
-		return ValDelta(*oc, *hc) == 1
+
+	} else if p.SelectedHands.Size() == 2 {
+		h_from := p.Hand[p.SelectedHands.Pop()]
+		h_to := p.Hand[p.SelectedHands.Pop()]
+
+		if len(h_to.Cards) == 0 && len(h_from.Cards) != 0 {
+			card := h_from.PopTop()
+			h_to.AddCard(card, true)
+			p.ResetSelected()
+			return true
+
+		} else if len(h_to.Cards) != 0 && len(h_from.Cards) != 0 {
+			if h_from.OpenNumber > 0 && h_to.OpenNumber > 0 {
+				if ValDelta(*h_to.GetTop(), *h_from.GetTop()) == 0 {
+					card := h_from.PopTop()
+					h_to.AddCard(card, true)
+					p.ResetSelected()
+					return true
+				}
+			}
+		}
 	}
 	return false
 }
 
-func (p *Player) MakeMove() {
-	log.Printf("p%d make move hand %d open top %d", p.Id, p.SelectedHand, p.SelectedOpen.GetTop()) 
-	card := p.Hand[p.SelectedHand].PopTop()
-	p.SelectedOpen.AddCard(card, true)
-	p.ResetSelected()
-}
 
-
-func (p *Player) GatherOpen(o *Deck) { // TODO rename
-	for range len(o.Cards) {
-		p.Close.AddCard(o.PopTop(), false)
+func (p *Player) GatherOpen(o_ind int) {
+	open := p.Open[o_ind]
+	for range len(open.Cards) {
+		p.Close.AddCard(open.PopTop(), false)
 	}
 	for i := range HAND_SIZE {
 		for range len(p.Hand[i].Cards) {
@@ -225,5 +274,3 @@ func (p *Player) GatherOpen(o *Deck) { // TODO rename
 		}
 	}
 }
-
-// TODO убрать открытую колоду у игрока и положить их в игру?

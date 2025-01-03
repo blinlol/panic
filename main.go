@@ -11,7 +11,7 @@ import (
 var GeneralFont *text.GoTextFace
 var GameCfg *GameConfig
 
-//go:embed LeedsUni10-12-13.ttf
+//go:embed resources/fonts/LeedsUni10-12-13.ttf
 var LeedsUni_ttf []byte
 
 // TODO выделить в отдельные пакеты логику
