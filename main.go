@@ -6,13 +6,12 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
+
+	"github.com/blinlol/panic/resources/fonts"
 )
 
 var GeneralFont *text.GoTextFace
 var GameCfg *GameConfig
-
-//go:embed resources/fonts/LeedsUni10-12-13.ttf
-var LeedsUni_ttf []byte
 
 // TODO выделить в отдельные пакеты логику
 
@@ -63,7 +62,7 @@ func main(){
 
 
 func getFont() *text.GoTextFace {
-	s, err := text.NewGoTextFaceSource(bytes.NewReader(LeedsUni_ttf))
+	s, err := text.NewGoTextFaceSource(bytes.NewReader(fonts.LeedsUni_ttf))
 	if err != nil {
 		panic(err)
 	}
@@ -80,8 +79,10 @@ func getLayout() ScreenLayout {
 	l.W = 1280
 	l.H = 720
 
-	l.CardW = l.W * 0.1
-	l.CardH = l.H * 0.1
+	// l.CardW = l.W * 0.1
+	// l.CardH = l.H * 0.1
+	l.CardW = 88
+	l.CardH = 124
 
 	l.A = l.CardW / 2
 	l.B = l.CardW / 2

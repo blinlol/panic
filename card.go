@@ -1,13 +1,18 @@
 package main
 
 import (
+	"bytes"
+	_ "embed"
 	"fmt"
+	"image"
+	"log"
 	"math"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/text/v2"
-)
+	// "github.com/hajimehoshi/ebiten/v2/text/v2"
 
+	"github.com/blinlol/panic/resources/cards"
+)
 
 type Card struct {
 	Suit Suit
@@ -16,10 +21,14 @@ type Card struct {
 
 
 func (c *Card) Draw(screen *ebiten.Image, x, y float64) {
-	op := &text.DrawOptions{}
+	// op := &text.DrawOptions{}
+	// op.GeoM.Translate(x, y)
+	// text.Draw(screen, fmt.Sprintf("%s %s", SuitToText[c.Suit], ValToText[c.Val]), 
+	// 			GeneralFont, op)
+
+	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Translate(x, y)
-	text.Draw(screen, fmt.Sprintf("%s %s", SuitToText[c.Suit], ValToText[c.Val]), 
-				GeneralFont, op)
+	screen.DrawImage(images[c.Suit].SubImage(rectVal[c.Val]).(*ebiten.Image), op)
 }
 
 
@@ -81,4 +90,40 @@ func init(){
 	ValToText[Val_Q] = "Q"
 	ValToText[Val_K] = "K"
 	ValToText[Val_A] = "A"
+}
+
+
+var (
+	images map[Suit]*ebiten.Image = make(map[Suit]*ebiten.Image)
+	rectVal map[CardVal]image.Rectangle = make(map[CardVal]image.Rectangle)
+)
+
+func init(){
+	tmp := func (suit Suit, src []byte) {
+		img, _, err := image.Decode(bytes.NewReader(src))
+		if err != nil {
+			log.Fatal(err)
+		}
+		images[suit] = ebiten.NewImageFromImage(img)
+	}
+
+	suitToSrc := map[Suit][]byte {
+		Clubs: cards.ImageClubsSrc,
+		Hearts: cards.ImageHeartsSrc,
+		Diamonds: cards.ImageDiamondsSrc,
+		Spades: cards.ImageSpadesSrc,
+	}
+	for suit, src := range suitToSrc {
+		tmp(suit, src)
+	}
+
+	size := images[Spades].Bounds().Size()
+	wc := size.X / 5
+	hc := size.Y / 3
+
+	for i, val := range ALL_CARDVALS {
+		x0, y0 := (i % 5) * wc, (i / 5) * hc
+		x1, y1 := x0 + wc, y0 + hc
+		rectVal[val] = image.Rect(x0, y0, x1, y1)
+	}
 }
