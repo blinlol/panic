@@ -38,9 +38,10 @@ type ControlKeys struct {
 func NewPlayer(d *Deck, id int, layout PlayerLayout, controlling ControlKeys) Player {
 	log.Println(layout)
 	d.Center = &layout.Close
-	o := &Deck{OpenNumber: 0, Center: &layout.Open}
+	o := NewEmptyDeck()
+	o.Center = &layout.Open
 	open := [3]*Deck{}
-	open[id] = o
+	open[id] = &o
 	var h [HAND_SIZE]*Deck
 	for i := range HAND_SIZE{
 		h[i] = &Deck{
@@ -72,26 +73,20 @@ func ExchangeOpenDecks(p1, p2 *Player) {
 
 
 func (p *Player) Draw(screen *ebiten.Image) {
-	p.Close.Draw(screen, NOT_SELECTED)
-	
-	sel := NOT_SELECTED
-	if p.SelectedOpen == 1 {
-		sel = Selected(p.Id)
-	}
-	p.Open[1].Draw(screen, sel)
+	p.Close.Draw(screen, true)
 
-	sel = NOT_SELECTED
-	if p.SelectedOpen == 2 {
-		sel = Selected(p.Id)
+	p.Open[p.Id].Draw(screen, false)
+
+	if p.SelectedOpen != noneOpen {
+		p.Open[p.SelectedOpen].DrawSelection(screen, Selected(p.Id))
 	}
-	p.Open[2].Draw(screen, sel)
 
 	for i, deck := range p.Hand {
-		sel = NOT_SELECTED
+		deck.Draw(screen, true)
+
 		if p.SelectedHands.Contain(i) {
-			sel = Selected(p.Id)
+			deck.DrawSelection(screen, Selected(p.Id))
 		}
-		deck.Draw(screen, sel)
 	}
 }
 

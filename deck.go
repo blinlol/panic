@@ -1,13 +1,19 @@
 package main
 
 import (
-	"fmt"
+	"bytes"
+	// "fmt"
+	"image"
 	"image/color"
+	"log"
+	"math"
 	"math/rand"
 	"slices"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/text/v2"
+	// "github.com/hajimehoshi/ebiten/v2/text/v2"
+
+	"github.com/blinlol/panic/resources/cards"
 )
 
 
@@ -15,6 +21,8 @@ type Deck struct {
 	Cards []*Card
 	Center *Coords
 	OpenNumber int
+
+	tethas [NUM_CARDS]float64
 }
 
 type Selected int
@@ -34,9 +42,26 @@ func NewDeck() Deck {
 			deck.Cards = append(deck.Cards, &Card{Suit: suit, Val: val})
 		}
 	}
+	for i := range deck.tethas {
+		deck.tethas[i] = randTetha()
+	}
+
 	return deck
 }
 
+
+func NewEmptyDeck() Deck {
+	deck := Deck{}
+	for i := range deck.tethas {
+		deck.tethas[i] = randTetha()
+	}
+	return deck
+}
+
+
+func randTetha() float64 {
+	return (rand.Float64() - 0.5) * math.Pi / 6.
+}
 
 func MergeDecks(d1, d2 Deck, openNumber int) Deck {
 	return Deck{
@@ -46,28 +71,51 @@ func MergeDecks(d1, d2 Deck, openNumber int) Deck {
 }
 
 
-func (d *Deck) Draw(screen *ebiten.Image, selected Selected) {
-	x := d.Center.X - GameCfg.Layout.CardW / 2
-	y := d.Center.Y - GameCfg.Layout.CardH / 2
+func (d *Deck) Draw(screen *ebiten.Image, evenly bool) {
+	x, y := d.getLeftUpperCornerXY()
 
 	if len(d.Cards) == 0 {
-		op := &text.DrawOptions{}
-		op.GeoM.Translate(x, y)
-		text.Draw(screen, "empty", GeneralFont, op)
-	} else {
-		op := &text.DrawOptions{}
-		op.GeoM.Translate(x, y+25)
-		text.Draw(screen, fmt.Sprintf("(%d)", len(d.Cards)), GeneralFont, op)
-		// TODO рисовать нижние карты тоже
-		if d.OpenNumber == 0 {
-			op := &text.DrawOptions{}
-			op.GeoM.Translate(x, y)
-			text.Draw(screen, "close", GeneralFont, op)
-		} else {
-			d.Cards[len(d.Cards) - 1].Draw(screen, x, y)	
-		}
-	}
+		// op := &text.DrawOptions{}
+		// op.GeoM.Translate(x, y)
+		// text.Draw(screen, "empty", GeneralFont, op)
 
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Translate(x, y)
+		screen.DrawImage(imageEmpty, op)
+
+	} else {
+		// op := &text.DrawOptions{}
+		// op.GeoM.Translate(x, y - 25)
+		// text.Draw(screen, fmt.Sprintf("(%d)", len(d.Cards)), GeneralFont, op)
+
+		xx, yy := x, y
+		for i, card := range d.Cards {
+			tetha, isOpen := 0., i >= len(d.Cards) - d.OpenNumber
+			if !evenly {
+				tetha = d.tethas[i]
+			} else {
+				yy += 2
+			}
+			card.Draw(screen, xx, yy, tetha, isOpen)
+		}
+
+		// if d.OpenNumber == 0 {
+		// 	// op := &text.DrawOptions{}
+		// 	// op.GeoM.Translate(x, y)
+		// 	// text.Draw(screen, "close", GeneralFont, op)
+
+		// 	op := &ebiten.DrawImageOptions{}
+		// 	op.GeoM.Translate(x, y)
+		// 	screen.DrawImage(imageBack, op)
+		// } else {
+		// 	d.Cards[len(d.Cards) - 1].Draw(screen, x, y)	
+		// }
+	}
+}
+
+
+func (d *Deck) DrawSelection(screen *ebiten.Image, selected Selected) {
+	x, y := d.getLeftUpperCornerXY()
 	if selected == FIRST_SELECTED {
 		im := ebiten.NewImage(10, 5)
 		im.Fill(color.RGBA{255, 0, 0, 255})
@@ -81,6 +129,13 @@ func (d *Deck) Draw(screen *ebiten.Image, selected Selected) {
 		op.GeoM.Translate(x, y + GameCfg.Layout.CardH + 5)
 		screen.DrawImage(im, op)
 	}
+}
+
+
+func (d *Deck) getLeftUpperCornerXY() (float64, float64){
+	x := d.Center.X - GameCfg.Layout.CardW / 2
+	y := d.Center.Y - GameCfg.Layout.CardH / 2
+	return x, y
 }
 
 
@@ -138,4 +193,17 @@ func (d *Deck) AddCard(card *Card, isOpen bool) {
 		d.OpenNumber += 1
 	}
 	d.Cards = append(d.Cards, card)
+}
+
+
+var (
+	imageEmpty *ebiten.Image
+)
+
+func init(){
+	img, _, err := image.Decode(bytes.NewReader(cards.ImageEmptyDeckSrc))
+	if err != nil {
+		log.Fatal(err)
+	}
+	imageEmpty = ebiten.NewImageFromImage(img)
 }

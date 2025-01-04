@@ -16,4 +16,10 @@ var (
 
 	//go:embed Spades-88x124.png
 	ImageSpadesSrc []byte
+
+	//go:embed empty.png
+	ImageEmptyDeckSrc []byte
+
+	//go:embed Card_Back-88x124.png
+	ImageCardBackSrc []byte
 )
