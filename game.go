@@ -75,7 +75,7 @@ func (g *Game) Update() error {
 	case GS_START:
 		g.State = GS_STARTING
 		g.Animations = append(g.Animations,
-			NewAnimStart(60*1, func() { g.State = GS_DIVIDE }))
+			NewAnimStart(5*1, func() { g.State = GS_DIVIDE }))
 
 	case GS_STARTING:
 
@@ -83,7 +83,7 @@ func (g *Game) Update() error {
 		// deck already divided if game is new
 		g.State = GS_NEW_ROUND
 		g.Animations = append(g.Animations,
-			NewAnimNewRound(60*1, func() { g.State = GS_LAYOUT }),
+			NewAnimNewRound(5*1, func() { g.State = GS_LAYOUT }),
 		)
 
 	case GS_NEW_ROUND:
@@ -94,11 +94,16 @@ func (g *Game) Update() error {
 		g.State = GS_OPEN
 
 	case GS_OPEN:
-		if slices.Contains(g.JustPressedKeys, g.Player1.Controlling.Close) && !g.openStateFlag[0] {
+		if len(g.Player1.Close.Cards) == 0 {
+			g.openStateFlag[0] = true
+		} else if slices.Contains(g.JustPressedKeys, g.Player1.Controlling.Close) && !g.openStateFlag[0] {
 			g.Player1.OpenClosed()
 			g.openStateFlag[0] = true
 		}
-		if slices.Contains(g.JustPressedKeys, g.Player2.Controlling.Close) && !g.openStateFlag[1] {
+
+		if len(g.Player2.Close.Cards) == 0 {
+			g.openStateFlag[1] = true
+		} else if slices.Contains(g.JustPressedKeys, g.Player2.Controlling.Close) && !g.openStateFlag[1] {
 			g.Player2.OpenClosed()
 			g.openStateFlag[1] = true
 		}
@@ -193,6 +198,9 @@ func (g *Game) Update() error {
 		}
 	}
 
+	g.Player1.Update()
+	g.Player2.Update()
+
 	return nil
 }
 
@@ -236,3 +244,4 @@ func (g *Game) save() {
 // TODO заменить константные продолжительности анимаций на зависимость от фпс (мб это неправильно, потому что нужнт зависеть от рпс)
 // TODO switch g.State заменить на что-то похожее на классы вершин в графе
 // TODO валидация ошибочных нажатий
+// TODO подумать над тем, чтобы в плеере был метод апдейт который делает все, что происходит тут, связанное с игроком

@@ -117,14 +117,14 @@ func (d *Deck) Draw(screen *ebiten.Image, evenly bool) {
 func (d *Deck) DrawSelection(screen *ebiten.Image, selected Selected) {
 	x, y := d.getLeftUpperCornerXY()
 	if selected == FIRST_SELECTED {
-		im := ebiten.NewImage(10, 5)
+		im := ebiten.NewImage(int(GameCfg.Layout.CardW), 5)
 		im.Fill(color.RGBA{255, 0, 0, 255})
 		op := &ebiten.DrawImageOptions{}
 		op.GeoM.Translate(x, y - 5)
 		screen.DrawImage(im, op)
 	} else if selected == SECOND_SELECTED {
-		im := ebiten.NewImage(10, 5)
-		im.Fill(color.RGBA{0, 255, 0, 255})
+		im := ebiten.NewImage(int(GameCfg.Layout.CardW), 5)
+		im.Fill(color.RGBA{255, 0, 0, 255})
 		op := &ebiten.DrawImageOptions{}
 		op.GeoM.Translate(x, y + GameCfg.Layout.CardH + 5)
 		screen.DrawImage(im, op)
@@ -189,6 +189,9 @@ func (d *Deck) DeleteTop() (ok bool) {
 
 
 func (d *Deck) AddCard(card *Card, isOpen bool) {
+	if card == nil {
+		panic("add nil card to deck")
+	}
 	if isOpen {
 		d.OpenNumber += 1
 	}

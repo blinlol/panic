@@ -2,8 +2,10 @@ package main
 
 import (
 	"log"
+	"slices"
 
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/text/v2"
 
 	"github.com/blinlol/panic/internal/queue"
 )
@@ -12,6 +14,8 @@ import (
 const HAND_SIZE = 5
 // const noneHand = -1
 const noneOpen = 0
+
+const controlW, controlH = 30, 30
 
 type Player struct {
 	Id int
@@ -24,6 +28,8 @@ type Player struct {
 	SelectedOpen int
 
 	Controlling ControlKeys
+
+	Animations []Animation
 }
 
 
@@ -88,7 +94,64 @@ func (p *Player) Draw(screen *ebiten.Image) {
 			deck.DrawSelection(screen, Selected(p.Id))
 		}
 	}
+
+	p.drawControlling(screen)
+
+	for _, anim := range p.Animations {
+		anim.Draw(screen)
+	}
 }
+
+
+func (p *Player) drawControlling(screen *ebiten.Image) {
+	deltaClose := Coords{
+		X: - GameCfg.Layout.CardW / 2 - 10,
+	}
+	deltaOpen := Coords{
+		Y: - GameCfg.Layout.CardH / 2 - 20,
+	}
+	deltaHand := Coords{
+		Y: - GameCfg.Layout.CardH / 2 - 10,
+	}
+
+	if p.Id == 2 {
+		deltaClose = deltaClose.Neg().Add(Coords{X: 10})
+		deltaOpen = deltaOpen.Neg()
+		deltaHand = deltaHand.Neg().Add(Coords{Y: 10})
+	}
+
+	drawButton(screen, p.Controlling.Close, p.Close.Center.Add(deltaClose))
+	drawButton(screen, p.Controlling.Open1, p.Open[1].Center.Add(deltaOpen))
+	drawButton(screen, p.Controlling.Open2, p.Open[2].Center.Add(deltaOpen))
+
+	for i, h := range p.Hand {
+		drawButton(screen, p.Controlling.Hand[i], h.Center.Add(deltaHand))
+	}
+}
+
+
+func drawButton(screen *ebiten.Image, key ebiten.Key, center Coords) {
+	btn := ebiten.NewImage(controlW, controlH)
+	text.Draw(btn, key.String(), GameCfg.GeneralFont, nil)
+	op := &ebiten.DrawImageOptions{}
+	// TODO рамку для буквы
+	op.GeoM.Translate(center.X - controlW / 2, center.Y - controlH / 2)
+	screen.DrawImage(btn, op)
+}
+
+
+func (p *Player) Update(){
+	i := 0
+	for i < len(p.Animations) {
+		finished := p.Animations[i].Update()
+		if finished {
+			p.Animations = slices.Delete(p.Animations, i, i+1)
+		} else {
+			i += 1
+		}
+	}
+}
+
 
 /* делит карты из close на остальные колоды */
 func (p *Player) LayOutCards() {
@@ -106,6 +169,13 @@ func (p *Player) LayOutCards() {
 			}
 
 			p.Hand[i].AddCard(card, false)
+
+			// TODO пофиксить так, чтобы не переключалось состояние пока не разложат карты. Возможно стоит
+			// if len(p.Close.Cards) == 0 {
+			// 	break outer
+			// }
+			// p.Animations = append(p.Animations, NewAnimMove(p.Close, p.Hand[i], false))
+			
 		}
 	}
 
@@ -116,9 +186,11 @@ func (p *Player) LayOutCards() {
 
 
 func (p *Player) OpenClosed() {
-	card := p.Close.GetTop()
-	p.Close.DeleteTop()
-	p.Open[p.Id].AddCard(card, true)
+	// card := p.Close.GetTop()
+	// p.Close.DeleteTop()
+	// p.Open[p.Id].AddCard(card, true)
+
+	p.Animations = append(p.Animations, NewAnimMove(p.Close, p.Open[p.Id], true))
 }
 
 
@@ -150,10 +222,11 @@ func (p *Player) HaveMove() bool {
 		}
 
 		c := h.GetTop()
-		if ValDelta(*c, *o1) == 1 {
+		if o1 != nil && ValDelta(*c, *o1) == 1 {
 			log.Printf("have move p%d valdelta 1 %v %v = 1\n", p.Id, c, o1)
 			return true
-		} else if ValDelta(*c, *o2) == 1 {
+		} 
+		if o2 != nil && ValDelta(*c, *o2) == 1 {
 			log.Printf("have move p%d valdelta 2 %v %v = 1\n", p.Id, c, o2)
 			return true
 		}
@@ -217,16 +290,19 @@ func (p *Player) MakeMove() bool {
 		h := p.Hand[p.SelectedHands.Top()]
 
 		if h.OpenNumber == 0 && len(h.Cards) > 0 {
+			// open top card in hand
 			h.OpenNumber += 1
 			p.SelectedHands.Pop()
 			return true
 
 		} else if p.SelectedOpen != noneOpen {
+			// move card from hand to selected open deck if can
 			o := p.Open[p.SelectedOpen]
-			if h.OpenNumber > 0 {
+			if h.OpenNumber > 0 && len(o.Cards) > 0 {
 				if ValDelta(*o.GetTop(), *h.GetTop()) == 1 {
-					card := h.PopTop()
-					o.AddCard(card, true)
+					p.Animations = append(p.Animations, NewAnimMove(h, o, true))
+					// card := h.PopTop()
+					// o.AddCard(card, true)
 					p.ResetSelected()
 					return true
 				}
@@ -238,16 +314,22 @@ func (p *Player) MakeMove() bool {
 		h_to := p.Hand[p.SelectedHands.Pop()]
 
 		if len(h_to.Cards) == 0 && len(h_from.Cards) != 0 {
-			card := h_from.PopTop()
-			h_to.AddCard(card, true)
+			// move top card to empty hand
+			p.Animations = append(p.Animations, NewAnimMove(h_from, h_to, true))
+
+			// card := h_from.PopTop()
+			// h_to.AddCard(card, true)
 			p.ResetSelected()
+
 			return true
 
 		} else if len(h_to.Cards) != 0 && len(h_from.Cards) != 0 {
+			// union equal val cards in hand
 			if h_from.OpenNumber > 0 && h_to.OpenNumber > 0 {
 				if ValDelta(*h_to.GetTop(), *h_from.GetTop()) == 0 {
-					card := h_from.PopTop()
-					h_to.AddCard(card, true)
+					p.Animations = append(p.Animations, NewAnimMove(h_from, h_to, true))
+					// card := h_from.PopTop()
+					// h_to.AddCard(card, true)
 					p.ResetSelected()
 					return true
 				}

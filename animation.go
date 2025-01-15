@@ -69,48 +69,48 @@ func (a *AnimNewRound) Draw(screen *ebiten.Image) {
 
 
 type AnimMove struct {
-	callback func()
-
+	from *Deck
+	to *Deck
+	card *Card
+	v Coords
+	t float64
+	duration float64
+	isOpen bool
 }
 
-func NewAnimMove(callback func()) *AnimMove {
+func NewAnimMove(from, to *Deck, isOpen bool) *AnimMove {
+	speed := 30.
+	sub := to.Center.Add(from.Center.Neg())
+	dist := to.Center.Distance(*from.Center)
+	v := sub.Mul(speed / dist)
+	
+	card := from.PopTop()
+	duration := dist / speed
+	if card == nil {
+		duration = 0
+	}
+
 	return &AnimMove{
-		callback: callback,
+		from: from,
+		to: to,
+		card: card,
+		v: v,
+		t: 0,
+		duration: duration,
+		isOpen: isOpen,
 	}
 }
 
 func (a *AnimMove) Update() (finished bool) {
+	a.t += 1
+	if a.t > a.duration {
+		finished = true
+		a.to.AddCard(a.card, a.isOpen)
+	}
 	return
 }
 
 func (a *AnimMove) Draw(screen *ebiten.Image) {
-	ebitenutil.DebugPrint(screen, "AnimMove")
+	p := a.from.Center.Add(a.v.Mul(a.t))
+	a.card.Draw(screen, p.X, p.Y, 0, a.isOpen)
 }
-
-
-
-
-// type AnimOpenClosed struct {
-// 	duration uint
-// 	callback func()
-// }
-
-// func NewAnimOpenClosed(duration uint, callback func()) *AnimOpenClosed {
-// 	return &AnimOpenClosed{
-// 		duration: duration,
-// 		callback: callback,
-// 	}
-// }
-
-// func (a *AnimOpenClosed) Update() (finished bool) {
-// 	a.duration -= 1
-// 	if a.duration <= 0 {
-// 		a.callback()
-// 		finished = true
-// 	}
-// 	return
-// }
-
-// func (a *AnimOpenClosed) Draw(screen *ebiten.Image) {
-// 	ebitenutil.DebugPrint(screen, fmt.Sprintf("AnimOpenClosed %d", a.duration))
-// }
